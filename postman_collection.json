@@ -1,0 +1,131 @@
+{
+  "info": {
+    "_postman_id": "a8e91f03-2475-4c07-b362-e93540d992d1",
+    "name": "Prelove Standalone Payment API",
+    "description": "Koleksi Postman API Pembayaran Midtrans Snap (Standalone Backend) untuk Marketplace Prelove",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "order_id",
+      "value": "PAY-SAMPLE",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Mengecek ketersediaan server payment"
+      },
+      "response": []
+    },
+    {
+      "name": "1. Buat Pembayaran (Create Payment)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var jsonData = pm.response.json();",
+              "if (jsonData.order_id) {",
+              "    pm.collectionVariables.set('order_id', jsonData.order_id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 150000,\n  \"reference_id\": \"ORDER-PRELOVE-001\",\n  \"items\": [\n    {\n      \"id\": \"PROD-101\",\n      \"price\": 150000,\n      \"quantity\": 1,\n      \"name\": \"Kamera Vintage Polaroid 600\"\n    }\n  ],\n  \"customer\": {\n    \"first_name\": \"Siti\",\n    \"last_name\": \"Pembeli\",\n    \"email\": \"siti@prelove.com\",\n    \"phone\": \"08123456789\"\n  },\n  \"metadata\": {\n    \"seller_id\": \"USER-BUDI-123\",\n    \"category\": \"electronics\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/payments",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "payments"
+          ]
+        },
+        "description": "Membuat transaksi Snap Midtrans baru. Mengembalikan token dan URL redirect."
+      },
+      "response": []
+    },
+    {
+      "name": "2. Detail & Status Pembayaran (Get Payment Status)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/payments/{{order_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "payments",
+            "{{order_id}}"
+          ]
+        },
+        "description": "Mengecek status pembayaran pesanan. Waktu ditampilkan dalam format ISO 8601 dengan offset zona Asia/Jakarta (+07:00)."
+      },
+      "response": []
+    },
+    {
+      "name": "3. Webhook Notifikasi Midtrans (Notification)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"status_code\": \"200\",\n  \"gross_amount\": \"150000.00\",\n  \"signature_key\": \"isi_signature_hash_sha512_disini\",\n  \"transaction_status\": \"settlement\",\n  \"payment_type\": \"bank_transfer\",\n  \"settlement_time\": \"2026-11-22 19:50:00\",\n  \"transaction_time\": \"2026-11-22 19:48:00\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/payments/notification",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "payments",
+            "notification"
+          ]
+        },
+        "description": "Endpoint penerima notifikasi HTTP POST dari Midtrans (Webhook). Catatan: Jalankan scripts/simulate-webhook.js untuk menghitung signature SHA-512 secara otomatis."
+      },
+      "response": []
+    }
+  ]
+}

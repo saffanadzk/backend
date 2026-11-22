@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Payment {
+  id               String    @id @default(uuid())
+  order_id         String    @unique
+  reference_id     String?
+  metadata         String?
+  gross_amount     Int
+  status           String    @default("pending") // pending, lunas, gagal, kadaluarsa, challenge
+  payment_type     String?
+  snap_token       String
+  redirect_url     String
+  customer_details String?
+  item_details     String
+  raw_notification String?
+  created_at       DateTime  @default(now())
+  expires_at       DateTime
+  paid_at          DateTime?
+  updated_at       DateTime  @updatedAt
+
+  @@index([reference_id])
+  @@map("payments")
+}

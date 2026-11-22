@@ -1,0 +1,6 @@
+﻿{
+  "amount": 150000,
+  "reference_id": "TEST-001",
+  "items": [{"id":"jaket-01","price":150000,"quantity":1,"name":"Jaket Denim"}],
+  "customer": {"first_name":"Budi","email":"budi@test.com"}
+}
