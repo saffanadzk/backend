@@ -12,6 +12,11 @@
       "type": "string"
     },
     {
+      "key": "api_key",
+      "value": "prelove_internal_secret_key_2026",
+      "type": "string"
+    },
+    {
       "key": "order_id",
       "value": "PAY-SAMPLE",
       "type": "string"
@@ -32,7 +37,7 @@
             "health"
           ]
         },
-        "description": "Mengecek ketersediaan server payment"
+        "description": "Mengecek ketersediaan server payment (Endpoint publik terbuka)"
       },
       "response": []
     },
@@ -58,6 +63,11 @@
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "x-api-key",
+            "value": "{{api_key}}",
+            "description": "Internal API Key untuk autentikasi antarservis"
           }
         ],
         "body": {
@@ -74,7 +84,7 @@
             "payments"
           ]
         },
-        "description": "Membuat transaksi Snap Midtrans baru. Mengembalikan token dan URL redirect."
+        "description": "Membuat transaksi Snap Midtrans baru. Dilindungi header x-api-key. Mengembalikan token dan URL redirect."
       },
       "response": []
     },
@@ -94,7 +104,7 @@
             "{{order_id}}"
           ]
         },
-        "description": "Mengecek status pembayaran pesanan. Waktu ditampilkan dalam format ISO 8601 dengan offset zona Asia/Jakarta (+07:00)."
+        "description": "Mengecek status pembayaran pesanan (Endpoint terbuka). Waktu ditampilkan dalam format ISO 8601 dengan offset zona Asia/Jakarta (+07:00)."
       },
       "response": []
     },
@@ -123,7 +133,7 @@
             "notification"
           ]
         },
-        "description": "Endpoint penerima notifikasi HTTP POST dari Midtrans (Webhook). Catatan: Jalankan scripts/simulate-webhook.js untuk menghitung signature SHA-512 secara otomatis."
+        "description": "Endpoint penerima notifikasi HTTP POST dari Midtrans (Webhook). Tidak memakai x-api-key karena dilindungi oleh verifikasi signature SHA-512 Midtrans."
       },
       "response": []
     }

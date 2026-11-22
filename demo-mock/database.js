@@ -1,20 +1,18 @@
+const path = require('path');
 const Database = require('better-sqlite3');
-const env = require('./env');
 
 let dbInstance = null;
-let currentPath = null;
+const defaultDbPath = path.resolve(__dirname, 'demo.db');
 
-function getDatabase(dbPath = env.DATABASE_PATH) {
+function getDatabase(dbPath = defaultDbPath) {
   if (dbInstance) {
     return dbInstance;
   }
 
-  currentPath = dbPath;
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
-  // Inisialisasi tabel-tabel utama
   initSchema(db);
 
   dbInstance = db;
@@ -47,7 +45,7 @@ function initSchema(db) {
     );
   `);
 
-  // 3. Model Order: SEMENTARA, akan diganti model order tim
+  // 3. Model Order: SEMENTARA (Placeholder Tim Order)
   db.exec(`
     CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,35 +64,16 @@ function initSchema(db) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
-
-  // 4. Model PaymentLog (Dikelola oleh App Payments)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS payment_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      order_id INTEGER REFERENCES orders(id),
-      order_id_raw TEXT,
-      raw_payload TEXT NOT NULL,
-      signature_valid INTEGER NOT NULL DEFAULT 0,
-      received_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
 }
 
 function closeDatabase() {
   if (dbInstance) {
     dbInstance.close();
     dbInstance = null;
-    currentPath = null;
   }
-}
-
-function resetDatabaseForTest(testPath = ':memory:') {
-  closeDatabase();
-  return getDatabase(testPath);
 }
 
 module.exports = {
   getDatabase,
   closeDatabase,
-  resetDatabaseForTest,
 };

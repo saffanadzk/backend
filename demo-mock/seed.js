@@ -1,11 +1,11 @@
-const { getDatabase } = require('../config/database');
-const UserModel = require('../models/userModel');
-const ProductModel = require('../models/productModel');
-const OrderModel = require('../models/orderModel');
+const { getDatabase } = require('./database');
+const UserModel = require('./models/userModel');
+const ProductModel = require('./models/productModel');
+const OrderModel = require('./models/orderModel');
 
 function seed() {
   const db = getDatabase();
-  console.log('Menjalankan seed database...');
+  console.log('Menjalankan seed database demo...');
 
   // 1. Users
   let seller = UserModel.findByUsername('penjual_budi');
@@ -71,11 +71,7 @@ function seed() {
     });
   }
 
-  console.log('Seed berhasil!');
-  console.log(`- Pembeli : ${buyer.username} (ID: ${buyer.id})`);
-  console.log(`- Penjual : ${seller.username} (ID: ${seller.id})`);
-  console.log(`- User Lain: ${otherUser.username} (ID: ${otherUser.id})`);
-  console.log(`- Sample Order: ${sampleOrder.order_id} (Rp${sampleOrder.gross_amount.toLocaleString()})`);
+  console.log('Seed demo berhasil!');
 }
 
 if (require.main === module) {

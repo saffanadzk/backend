@@ -4,7 +4,11 @@ const dotenv = require('dotenv');
 const envPath = path.resolve(__dirname, '../../.env');
 
 function loadEnv() {
-  dotenv.config({ path: envPath, override: true });
+  if (process.env.NODE_ENV === 'test') {
+    dotenv.config({ path: envPath, override: false });
+  } else {
+    dotenv.config({ path: envPath, override: true });
+  }
 }
 
 loadEnv();
@@ -27,6 +31,18 @@ const env = {
   },
   get DATABASE_URL() {
     return process.env.DATABASE_URL || 'file:./dev.db';
+  },
+  set DATABASE_URL(val) {
+    process.env.DATABASE_URL = val;
+  },
+  get INTERNAL_API_KEY() {
+    return (process.env.INTERNAL_API_KEY || '').trim();
+  },
+  set INTERNAL_API_KEY(val) {
+    process.env.INTERNAL_API_KEY = val;
+  },
+  get ENABLE_DEMO() {
+    return String(process.env.ENABLE_DEMO).toLowerCase() === 'true';
   },
   get MIDTRANS() {
     return {

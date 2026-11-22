@@ -1,3 +1,6 @@
+process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = 'file:./test.db';
+
 const { describe, it, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert');
 const crypto = require('crypto');
@@ -10,13 +13,21 @@ const { setMockSnapClient } = require('../src/services/midtransService');
 
 describe('Standalone Payment Module Tests', () => {
   const testServerKey = 'SB-Mid-server-TEST-KEY-12345';
+  const testApiKey = 'prelove-test-internal-api-key';
 
   before(() => {
+    // Pastikan database yang digunakan untuk test adalah test.db terisolasi
+    assert.strictEqual(
+      process.env.DATABASE_URL,
+      'file:./test.db',
+      'Pengujian harus berjalan menggunakan test.db agar tidak menimpa dev.db!'
+    );
     env.MIDTRANS.SERVER_KEY = testServerKey;
+    env.INTERNAL_API_KEY = testApiKey;
   });
 
   beforeEach(async () => {
-    // Bersihkan tabel payments sebelum setiap pengujian
+    // Bersihkan tabel payments di test.db sebelum setiap pengujian
     await prisma.payment.deleteMany();
   });
 
@@ -30,17 +41,43 @@ describe('Standalone Payment Module Tests', () => {
     return crypto.createHash('sha512').update(raw).digest('hex');
   }
 
-  // 1. Health Check
+  // 1. Health Check (Terbuka tanpa autentikasi)
   it('GET /health mengembalikan status 200 OK', async () => {
     const res = await request(app).get('/health');
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.status, 'ok');
   });
 
-  // 2. Validasi Input POST /api/payments
+  // 2. Proteksi API Key pada POST /api/payments
+  it('POST /api/payments menolak jika header x-api-key tidak disertakan (401)', async () => {
+    const res = await request(app)
+      .post('/api/payments')
+      .send({
+        amount: 100000,
+        items: [{ id: '1', name: 'Barang', price: 100000, quantity: 1 }],
+      });
+    assert.strictEqual(res.status, 401);
+    assert.strictEqual(res.body.error, 'Unauthorized');
+    assert.match(res.body.message, /API Key tidak valid atau header x-api-key tidak disertakan/i);
+  });
+
+  it('POST /api/payments menolak jika header x-api-key salah (401)', async () => {
+    const res = await request(app)
+      .post('/api/payments')
+      .set('x-api-key', 'kunci-api-salah-123')
+      .send({
+        amount: 100000,
+        items: [{ id: '1', name: 'Barang', price: 100000, quantity: 1 }],
+      });
+    assert.strictEqual(res.status, 401);
+    assert.strictEqual(res.body.error, 'Unauthorized');
+  });
+
+  // 3. Validasi Input POST /api/payments (Dengan API Key yang Valid)
   it('POST /api/payments menolak jika amount <= 0 atau bukan integer (400)', async () => {
     const res1 = await request(app)
       .post('/api/payments')
+      .set('x-api-key', testApiKey)
       .send({
         amount: 0,
         items: [{ price: 0, quantity: 1 }],
@@ -50,6 +87,7 @@ describe('Standalone Payment Module Tests', () => {
 
     const res2 = await request(app)
       .post('/api/payments')
+      .set('x-api-key', testApiKey)
       .send({
         amount: 150000.5,
         items: [{ price: 150000, quantity: 1 }],
@@ -60,6 +98,7 @@ describe('Standalone Payment Module Tests', () => {
   it('POST /api/payments menolak jika items kosong atau tidak valid (400)', async () => {
     const res = await request(app)
       .post('/api/payments')
+      .set('x-api-key', testApiKey)
       .send({
         amount: 100000,
         items: [],
@@ -71,6 +110,7 @@ describe('Standalone Payment Module Tests', () => {
   it('POST /api/payments menolak jika total item (price * quantity) tidak sama dengan amount (400)', async () => {
     const res = await request(app)
       .post('/api/payments')
+      .set('x-api-key', testApiKey)
       .send({
         amount: 150000,
         items: [
@@ -82,7 +122,7 @@ describe('Standalone Payment Module Tests', () => {
     assert.match(res.body.message, /tidak sesuai dengan amount/i);
   });
 
-  // 3. Sukses Buat Pembayaran
+  // 4. Sukses Buat Pembayaran
   it('POST /api/payments sukses membuat order_id PAY-xxx, token Snap, dan tersimpan di DB status "pending"', async () => {
     setMockSnapClient({
       createTransaction: async (param) => {
@@ -111,7 +151,11 @@ describe('Standalone Payment Module Tests', () => {
       },
     };
 
-    const res = await request(app).post('/api/payments').send(body);
+    const res = await request(app)
+      .post('/api/payments')
+      .set('x-api-key', testApiKey)
+      .send(body);
+
     assert.strictEqual(res.status, 201);
     assert.ok(res.body.payment_id);
     assert.ok(res.body.order_id);
@@ -131,7 +175,7 @@ describe('Standalone Payment Module Tests', () => {
     assert.strictEqual(savedInDb.reference_id, 'REF-ORDER-999');
   });
 
-  // 4. GET /api/payments/:orderId
+  // 5. GET /api/payments/:orderId
   it('GET /api/payments/:orderId mengembalikan 404 jika order tidak ada', async () => {
     const res = await request(app).get('/api/payments/PAY-TIDAK-ADA');
     assert.strictEqual(res.status, 404);
@@ -166,7 +210,7 @@ describe('Standalone Payment Module Tests', () => {
     assert.strictEqual(res.body.paid_at, '2026-11-22T19:50:00+07:00');
   });
 
-  // 5. Webhook: Signature salah -> 403
+  // 6. Webhook: Signature salah -> 403 (Webhook tidak butuh x-api-key)
   it('POST /api/payments/notification menolak signature salah dengan status 403', async () => {
     const payload = {
       order_id: 'PAY-1234',
@@ -181,7 +225,7 @@ describe('Standalone Payment Module Tests', () => {
     assert.match(res.body.message, /signature key tidak valid/i);
   });
 
-  // 6. Webhook: Order tidak ditemukan -> 404
+  // 7. Webhook: Order tidak ditemukan -> 404
   it('POST /api/payments/notification mengembalikan 404 jika order_id tidak ada di DB', async () => {
     const orderId = 'PAY-UNKNOWN-999';
     const statusCode = '200';
@@ -200,7 +244,7 @@ describe('Standalone Payment Module Tests', () => {
     assert.strictEqual(res.status, 404);
   });
 
-  // 7. Webhook: Settlement -> status "lunas" dan paid_at WIB
+  // 8. Webhook: Settlement -> status "lunas" dan paid_at WIB
   it('POST /api/payments/notification status "settlement" mengubah status menjadi "lunas" dan mengisi paid_at', async () => {
     const payment = await prisma.payment.create({
       data: {
@@ -240,7 +284,7 @@ describe('Standalone Payment Module Tests', () => {
     assert.strictEqual(updated.paid_at.toISOString(), '2026-11-22T12:45:00.000Z');
   });
 
-  // 8. Webhook: Idempotensi (notifikasi kedua diabaikan)
+  // 9. Webhook: Idempotensi (notifikasi kedua diabaikan)
   it('POST /api/payments/notification bersifat idempotent (tidak menimpa status lunas)', async () => {
     const paidDate = new Date('2026-11-22T12:45:00.000Z');
     const payment = await prisma.payment.create({
@@ -281,7 +325,7 @@ describe('Standalone Payment Module Tests', () => {
     assert.strictEqual(fresh.paid_at.toISOString(), paidDate.toISOString());
   });
 
-  // 9. Webhook: Mapping status lainnya (capture challenge, deny/cancel -> gagal, expire -> kadaluarsa)
+  // 10. Webhook: Mapping status lainnya (capture challenge, deny/cancel -> gagal, expire -> kadaluarsa)
   it('POST /api/payments/notification memetakan deny/cancel -> gagal dan expire -> kadaluarsa', async () => {
     const paymentExpire = await prisma.payment.create({
       data: {

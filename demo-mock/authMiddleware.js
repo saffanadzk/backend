@@ -1,7 +1,7 @@
-const UserModel = require('../models/userModel');
+const UserModel = require('./models/userModel');
 
 /**
- * Middleware autentikasi untuk memverifikasi user pembeli.
+ * Middleware autentikasi demo untuk memverifikasi user pembeli tiruan.
  * Mendukung header:
  * - Authorization: Bearer <username/token>
  * - x-user-id: <id>

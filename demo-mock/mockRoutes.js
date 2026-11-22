@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const UserModel = require('../models/userModel');
-const ProductModel = require('../models/productModel');
-const OrderModel = require('../models/orderModel');
-const { requireAuth } = require('../middlewares/authMiddleware');
+const UserModel = require('./models/userModel');
+const ProductModel = require('./models/productModel');
+const OrderModel = require('./models/orderModel');
+const { requireAuth } = require('./authMiddleware');
+const { getDatabase } = require('./database');
 
 router.post('/auth/login', (req, res) => {
   const { username } = req.body;
@@ -29,7 +30,7 @@ router.get('/products', (req, res) => {
 });
 
 router.get('/orders', requireAuth, (req, res) => {
-  const db = require('../config/database').getDatabase();
+  const db = getDatabase();
   const orders = db.prepare(`
     SELECT o.*, p.name as product_name
     FROM orders o

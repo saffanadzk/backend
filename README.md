@@ -1,6 +1,6 @@
 # Prelove Standalone Payment Backend (Node.js + Express.js + Midtrans Snap + Prisma ORM)
 
-Modul backend pembayaran **Midtrans Snap (Sandbox)** untuk web prelove (jual beli barang bekas). Modul ini berdiri sendiri (**standalone**) tanpa ketergantungan pada tabel user atau order.
+Modul backend pembayaran **Midtrans Snap (Sandbox)** untuk web prelove (jual beli barang bekas). Modul ini berdiri sendiri (**standalone**) tanpa ketergantungan pada tabel user atau order. Modul lain (order, user/auth) akan memanggil modul pembayaran ini melalui `reference_id` dan dilindungi dengan **Internal API Key**.
 
 ---
 
@@ -8,8 +8,17 @@ Modul backend pembayaran **Midtrans Snap (Sandbox)** untuk web prelove (jual bel
 
 ```
 backend/
+├── demo-mock/                    # Terpisah: Mock user & order tiruan (hanya aktif jika ENABLE_DEMO=true)
+│   ├── models/                   # Mock UserModel, ProductModel, OrderModel
+│   ├── authMiddleware.js         # Mock auth requireAuth
+│   ├── mockRoutes.js             # Mock /auth/login, /products, /orders
+│   ├── database.js               # Mock SQLite database untuk demo
+│   └── seed.js                   # Script seed data tiruan
 ├── prisma/
-│   └── schema.prisma             # Skema tabel payments (Prisma ORM)
+│   ├── schema.prisma             # Skema tabel payments murni (Prisma ORM)
+│   ├── dev.db                    # Database utama (berisi data transaksi aktif)
+│   ├── dev.db.backup             # Backup aman database utama
+│   └── test.db                   # Database terisolasi khusus automated testing
 ├── scripts/
 │   └── simulate-webhook.js       # Script CLI simulasi webhook Midtrans lokal
 ├── src/
@@ -19,6 +28,7 @@ backend/
 │   ├── controllers/
 │   │   └── paymentController.js  # Controller create, getDetail, notification
 │   ├── middlewares/
+│   │   ├── apiKeyAuth.js         # Proteksi internal API Key untuk POST /api/payments
 │   │   ├── errorHandler.js       # Centralized error handler
 │   │   └── validatePayment.js    # Validasi request amount & items
 │   ├── routes/
@@ -32,7 +42,7 @@ backend/
 │   ├── app.js                    # Konfigurasi Express, middleware, routing
 │   └── server.js                 # Entry point server (port 3000)
 ├── tests/
-│   └── payment.test.js           # 12 automated unit & integration tests
+│   └── payment.test.js           # 14 automated unit & integration tests (terisolasi di test.db)
 ├── .env.example                  # Template environment variables
 ├── .env                          # Kredensial lokal
 ├── package.json
@@ -62,12 +72,18 @@ backend/
    ```bash
    cp .env.example .env
    ```
-   Isi dengan kredensial Sandbox Anda:
+   Pastikan variabel environment berikut terisi:
    ```env
    # Midtrans Configuration (Sandbox)
    MIDTRANS_SERVER_KEY=SB-Mid-server-xxxxxxxxxxxx
    MIDTRANS_CLIENT_KEY=SB-Mid-client-xxxxxxxxxxxx
    MIDTRANS_IS_PRODUCTION=false
+
+   # Internal API Key (untuk melindungi POST /api/payments)
+   INTERNAL_API_KEY=prelove_internal_secret_key_2026
+
+   # Demo / Mock Routes (true untuk mengaktifkan mock routes di /api/demo, default false)
+   ENABLE_DEMO=false
 
    # Database Connection (Default: SQLite dev.db)
    DATABASE_URL="file:./dev.db"
@@ -75,8 +91,6 @@ backend/
    # Server Port
    PORT=3000
    ```
-   > **Catatan Database PostgreSQL / MySQL:**
-   > Jika ingin menggunakan PostgreSQL atau MySQL, ubah `provider` di `prisma/schema.prisma` menjadi `"postgresql"` atau `"mysql"`, sesuaikan `DATABASE_URL` (misal: `postgresql://user:pass@localhost:5432/prelove?schema=public`), lalu jalankan `npm run prisma:push`.
 
 4. Sinkronisasi Skema Database (Prisma):
    ```bash
@@ -95,7 +109,10 @@ backend/
 
 ### 1. `POST /api/payments` (Buat Pembayaran)
 Membuat transaksi pembayaran di Midtrans Snap dengan batas waktu pembayaran (expiry) **60 menit**.
-- **Header:** `Content-Type: application/json`
+- **Autentikasi:** Wajib menyertakan header `x-api-key: <INTERNAL_API_KEY>`
+- **Header:**
+  - `Content-Type: application/json`
+  - `x-api-key: prelove_internal_secret_key_2026`
 - **Request Body:**
   ```json
   {
@@ -125,7 +142,8 @@ Membuat transaksi pembayaran di Midtrans Snap dengan batas waktu pembayaran (exp
   - `amount` wajib berupa integer > 0.
   - `items` wajib array tidak kosong.
   - Total `(price * quantity)` dari seluruh item **harus sama persis** dengan `amount`.
-  - Jika tidak valid, mengembalikan error `400 Bad Request`.
+  - Jika `x-api-key` tidak valid atau tidak disertakan $\rightarrow$ `401 Unauthorized`.
+  - Jika body tidak valid $\rightarrow$ `400 Bad Request`.
 - **Response (201 Created):**
   ```json
   {
@@ -141,7 +159,7 @@ Membuat transaksi pembayaran di Midtrans Snap dengan batas waktu pembayaran (exp
 ---
 
 ### 2. `GET /api/payments/:orderId` (Status Pembayaran)
-Mengambil status pembayaran terkini. Waktu ditampilkan dalam zona Asia/Jakarta (`+07:00`).
+Mengambil detail dan status pembayaran terkini. Endpoint ini terbuka untuk pengecekan status transaksi. Waktu ditampilkan dalam format ISO 8601 dengan offset zona Asia/Jakarta (`+07:00`).
 - **Response (200 OK):**
   ```json
   {
@@ -159,10 +177,10 @@ Mengambil status pembayaran terkini. Waktu ditampilkan dalam zona Asia/Jakarta (
 ---
 
 ### 3. `POST /api/payments/notification` (Webhook Midtrans)
-Endpoint publik penerima callback dari Midtrans.
+Endpoint publik penerima callback dari Midtrans. Endpoint ini **tidak memakai API Key**, melainkan diverifikasi menggunakan signature SHA-512 bawaan Midtrans.
 - **Aturan Pemrosesan:**
-  1. **Verifikasi Signature:** `SHA512(order_id + status_code + gross_amount + SERVER_KEY) === signature_key`. Jika tidak valid -> return `403 Forbidden`.
-  2. **Pengecekan Order:** Jika `order_id` tidak ada di DB -> log warning dan return `404 Not Found`.
+  1. **Verifikasi Signature:** `SHA512(order_id + status_code + gross_amount + SERVER_KEY) === signature_key`. Jika tidak valid $\rightarrow$ return `403 Forbidden`.
+  2. **Pengecekan Order:** Jika `order_id` tidak ada di DB $\rightarrow$ log warning dan return `404 Not Found`.
   3. **Idempotensi:** Jika status di database sudah `"lunas"`, notifikasi berikutnya diabaikan dan `paid_at` tidak ditimpa.
   4. **Mapping Status:**
      - `capture` & `fraud_status == "accept"` $\rightarrow$ `"lunas"`
@@ -177,12 +195,25 @@ Endpoint publik penerima callback dari Midtrans.
 
 ---
 
+### 4. `GET /health` (Health Check)
+Endpoint publik untuk memantau status aktif server payment.
+- **Response (200 OK):**
+  ```json
+  {
+    "status": "ok",
+    "message": "Prelove Payment Service is running",
+    "timestamp": "2026-11-22T07:15:00.000Z"
+  }
+  ```
+
+---
+
 ## 4. Cara Uji Coba
 
 ### Opsi A: Uji Coba Lokal Tanpa ngrok (Menggunakan Simulator Script)
 Telah disediakan script [scripts/simulate-webhook.js](file:///e:/payment/backend/scripts/simulate-webhook.js) untuk menghitung signature SHA-512 secara otomatis dan menembak webhook lokal:
 
-1. Buat pembayaran via curl atau Postman, catat `order_id` (misal: `PAY-1732280000-A1B2C3D4`).
+1. Buat pembayaran via curl atau Postman (sertakan header `x-api-key`), catat `order_id` (misal: `PAY-1732280000-A1B2C3D4`).
 2. Jalankan simulasi webhook:
    ```bash
    node scripts/simulate-webhook.js PAY-1732280000-A1B2C3D4 150000
@@ -222,6 +253,7 @@ Telah disediakan script [scripts/simulate-webhook.js](file:///e:/payment/backend
 ```bash
 curl -X POST http://localhost:3000/api/payments \
   -H "Content-Type: application/json" \
+  -H "x-api-key: prelove_internal_secret_key_2026" \
   -d '{
     "amount": 150000,
     "reference_id": "ORDER-PRELOVE-001",
@@ -250,8 +282,8 @@ curl -X GET http://localhost:3000/api/payments/<ORDER_ID_DARI_MIDTRANS>
 
 ## 6. Menjalankan Automated Tests
 
-Test suite dijalankan dengan test runner bawaan Node.js:
+Test suite dijalankan dengan test runner bawaan Node.js dan terisolasi secara otomatis pada `prisma/test.db` sehingga data transaksi di `prisma/dev.db` tidak pernah terhapus atau tertimpa:
 ```bash
 npm test
 ```
-*Hasil:* 12 skenario pengujian komprehensif berhasil 100% (validasi input, snap expiry 60 menit, verifikasi signature SHA-512, pemetaan status, penanganan WIB, idempotensi webhook).
+*Hasil:* 14 skenario pengujian komprehensif berhasil 100% (proteksi x-api-key, validasi input, snap expiry 60 menit, verifikasi signature SHA-512, pemetaan status, penanganan WIB, idempotensi webhook).

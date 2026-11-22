@@ -22,6 +22,12 @@ if (!orderId || !amountInput) {
  Contoh:
  node scripts/simulate-webhook.js PAY-1732280000-A1B2C3D4 150000
  node scripts/simulate-webhook.js PAY-1732280000-A1B2C3D4 150000 expire
+
+ Catatan Autentikasi:
+ - Webhook /api/payments/notification TIDAK membutuhkan header x-api-key
+   karena sudah dilindungi oleh verifikasi SHA-512 signature key Midtrans.
+ - Untuk membuat transaksi (POST /api/payments), sertakan header:
+   x-api-key: ${process.env.INTERNAL_API_KEY || 'prelove_internal_secret_key_2026'}
 ========================================================================
 `);
   process.exit(1);
